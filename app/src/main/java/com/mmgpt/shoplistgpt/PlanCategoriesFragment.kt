@@ -45,14 +45,15 @@ class PlanCategoriesFragment : Fragment() {
                 viewHolder: RecyclerView.ViewHolder,
                 target: RecyclerView.ViewHolder
             ): Boolean {
-                val from = viewHolder.adapterPosition
-                val to = target.adapterPosition
-                val itemFrom = adapter.currentList.getOrNull(from)
-                val itemTo = adapter.currentList.getOrNull(to)
-                if (itemFrom?.isPlaceholder == true || itemTo?.isPlaceholder == true) return false
-                viewModel.reorderCategory(from - 1, to - 1)
-                adapter.moveItem(from, to)
-                return true
+                val from = viewHolder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
+                val itemFrom = adapter.currentList.getOrNull(from) ?: return false
+                val itemTo = adapter.currentList.getOrNull(to) ?: return false
+                if (!itemFrom.isHeading || !itemTo.isHeading) return false
+                // Only the ViewModel publishes reordered lists. Moving the adapter's
+                // stale snapshot separately can overwrite its pending model update.
+                return viewModel.moveCategory(itemFrom.id, itemTo.id, afterTarget = from < to)
             }
 
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
@@ -62,11 +63,13 @@ class PlanCategoriesFragment : Fragment() {
 
         adapter = ItemAdapter(
             onAction = { item, action ->
-                val index = adapter.currentList.indexOf(item) - 1
-                when (action) {
-                    ItemAdapter.Action.EDIT -> showEditDialog(index, item.name)
-                    ItemAdapter.Action.DELETE -> viewModel.deleteCategory(index)
-                    else -> {}
+                val index = viewModel.categories.value?.indexOfFirst { it.id == item.id } ?: -1
+                if (index >= 0) {
+                    when (action) {
+                        ItemAdapter.Action.EDIT -> showEditDialog(item.id, item.name)
+                        ItemAdapter.Action.DELETE -> viewModel.deleteCategory(index)
+                        else -> {}
+                    }
                 }
             },
             mode = ItemAdapter.Mode.PLAN,
@@ -83,11 +86,11 @@ class PlanCategoriesFragment : Fragment() {
                 val child = binding.recyclerView.findChildViewUnder(e.x, e.y)
                 val position = child?.let { binding.recyclerView.getChildAdapterPosition(it) } ?: RecyclerView.NO_POSITION
                 if (position != RecyclerView.NO_POSITION) {
-                    val item = adapter.currentList.getOrNull(position)
-                    if (item?.isHeading == true) {
-                        val index = position - 1
+                    val categoryId = binding.recyclerView.getChildViewHolder(child!!).itemId
+                    val index = viewModel.categories.value?.indexOfFirst { it.id == categoryId } ?: -1
+                    if (index >= 0) {
                         val viewPager = requireActivity().findViewById<ViewPager2>(R.id.viewPager)
-                        viewPager.currentItem = index + 1
+                        viewPager.setCurrentItem(index + 1, false)
                         return true
                     }
                 }
@@ -124,14 +127,15 @@ class PlanCategoriesFragment : Fragment() {
         }
     }
 
-    private fun showEditDialog(index: Int, current: String) {
+    private fun showEditDialog(categoryId: Long, current: String) {
         val input = android.widget.EditText(requireContext()).apply { setText(current) }
         AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.edit))
             .setView(input)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val text = input.text.toString().trim()
-                if (text.isNotEmpty()) {
+                val index = viewModel.categories.value?.indexOfFirst { it.id == categoryId } ?: -1
+                if (text.isNotEmpty() && index >= 0) {
                     viewModel.editCategory(index, text)
                 }
             }

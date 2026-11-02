@@ -147,6 +147,26 @@ class ShoppingListViewModel(application: Application) : AndroidViewModel(applica
         saveState()
     }
 
+    /**
+     * Places a category beside another by identity. The displayed positions may be
+     * from an older ListAdapter snapshot, so repeated drag callbacks must describe
+     * the same relative placement instead of swapping current model indices.
+     */
+    fun moveCategory(categoryId: Long, targetId: Long, afterTarget: Boolean): Boolean {
+        val current = _categories.value?.toMutableList() ?: return false
+        val from = current.indexOfFirst { it.id == categoryId }
+        val target = current.indexOfFirst { it.id == targetId }
+        if (from < 0 || target < 0 || from == target) return false
+        val destination = target - (if (from < target) 1 else 0) +
+            (if (afterTarget) 1 else 0)
+        if (from == destination) return true
+        val category = current.removeAt(from)
+        current.add(destination, category)
+        _categories.value = current
+        saveState()
+        return true
+    }
+
     fun clearAllCategories() {
         _categories.value = emptyList()
         saveState()
